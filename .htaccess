@@ -6,8 +6,8 @@ Options -Indexes
 
 # Only index.html and client/ are needed by the browser. Block everything else:
 #   dot-files and dot-directories (.git, .vscode, .htaccess, .gitignore, ...),
-#   content/ (README images), and repository files (README.md, LICENSE, check.sh).
-<If "%{REQUEST_URI} =~ m#/\.|/content(/|$)|/(README\.md|LICENSE|check\.sh)$#">
+#   content/ (README images), tools/ (deployment scripts), and README.md, LICENSE.
+<If "%{REQUEST_URI} =~ m#/\.|/(content|tools)(/|$)|/(README\.md|LICENSE)$#">
     Require all denied
 </If>
 
