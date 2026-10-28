@@ -1,9 +1,0 @@
-.git/
-.gitignore
-.vscode/
-Dockerfile
-content/
-node_modules/
-public/
-tmp/
-volumes/

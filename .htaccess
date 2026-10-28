@@ -1,0 +1,17 @@
+# DIƒƒER - Apache 2.4 configuration
+# Needs "AllowOverride All" for this directory (run check.sh to verify).
+
+DirectoryIndex index.html
+Options -Indexes
+
+# Only index.html and client/ are needed by the browser. Block everything else:
+#   dot-files and dot-directories (.git, .vscode, .htaccess, .gitignore, ...),
+#   content/ (README images), and repository files (README.md, LICENSE, check.sh).
+<If "%{REQUEST_URI} =~ m#/\.|/content(/|$)|/(README\.md|LICENSE|check\.sh)$#">
+    Require all denied
+</If>
+
+<IfModule mod_mime.c>
+    AddType image/svg+xml .svg
+    AddCharset utf-8 .html .css .js
+</IfModule>

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DIƒƒER</title>
+    <link rel="icon" href="client/img/icon.svg" sizes="any" type="image/svg+xml">
+    <link rel="stylesheet" href="client/css/vendor/diff2html.min.css">
+    <link rel="stylesheet" href="client/css/vendor/micromodal.min.css">
+    <link rel="stylesheet" href="client/css/vendor/pure.min.css">
+    <link rel="stylesheet" href="client/css/main.css">
+  </head>
+  <body>
+    <div class="flex-col h100">
+      <div class="header shrink">
+        <h1><a class="logo" href="./">DIƒƒER</a></h1>
+      </div>
+
+      <div class="main grow">
+        <div class="controls shrink">
+          <button class="compare hidden pure-button" type="button">COMPARE</button>
+          <button class="edit hidden pure-button" type="button">EDIT</button>
+          <button class="download hidden pure-button" type="button">DOWNLOAD</button>
+        </div>
+
+        <div class="diff shrink hidden"></div>
+
+        <form id="main" class="h100 flex-col pure-form hidden">
+          <input id="title" class="shrink" type="text" maxlength="64" placeholder="Untitled">
+
+          <div class="grow">
+            <div class="files flex-row">
+              <div class="editor flex-row">
+                <div class="line-num"></div>
+                <textarea id="fileA" class="pure-input-1 no-select"></textarea>
+              </div>
+              <div class="delim shrink"></div>
+              <div class="editor flex-row">
+                <div class="line-num"></div>
+                <textarea id="fileB" class="pure-input-1 no-select"></textarea>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal micromodal-slide" id="modal-1" aria-hidden="true">
+      <div class="modal__overlay" tabindex="-1" data-micromodal-close>
+        <div class="modal__container" role="dialog" aria-modal="true" aria-labelledby="modal-1-title">
+          <header class="modal__header">
+            <h2 class="modal__title" id="modal-1-title"></h2>
+            <button class="modal__close" aria-label="Close" data-micromodal-close></button>
+          </header>
+          <main class="modal__content" id="modal-1-content"></main>
+        </div>
+      </div>
+    </div>
+
+    <script src="client/js/vendor/diff.min.js"></script>
+    <script src="client/js/vendor/diff2html-ui.min.js"></script>
+    <script src="client/js/vendor/diff2html.min.js"></script>
+    <script src="client/js/vendor/micromodal.min.js"></script>
+    <script src="client/js/utils.js"></script>
+    <script src="client/js/editor.js"></script>
+    <script src="client/js/main.js"></script>
+  </body>
+</html>

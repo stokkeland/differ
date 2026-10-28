@@ -25,10 +25,19 @@
     return [added, removed]
   }
 
-  const decode = (data) => {
-    return new TextDecoder().decode(
-      pako.inflate(buffer.Buffer.from(data, 'hex'))
+  const escapeHtml = (s) =>
+    s.replace(
+      /[&<>"']/g,
+      (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
     )
+
+  const patchFilename = (title) => {
+    const name = (title || '')
+      .trim()
+      .replace(/[^\w.-]+/g, '_')
+      .replace(/^[_.]+|[_.]+$/g, '')
+    return (name || 'diff') + '.patch'
   }
 
   const $ = document.querySelector.bind(document),
@@ -38,14 +47,11 @@
 
   function App() {
     const _app = this
-    const _context = window._diffContext || {}
 
     this.ui = {
-      // loader: $('#loader'),
-      controls: $('form#main .controls'),
       compare: $('button.compare'),
       edit: $('button.edit'),
-      save: $('button.save'),
+      download: $('button.download'),
       files: $('form#main .files'),
       fileA: $('#fileA'),
       fileB: $('#fileB'),
@@ -57,10 +63,7 @@
     }
 
     this.state = {
-      id: _context.id || null,
-      created: _context.created || null,
-      title: _context.title || null,
-      data: _context.data || null,
+      title: null,
       diff: null,
     }
 
@@ -74,11 +77,6 @@
       }
     }
 
-    function lineNumHandler(e) {
-      console.log(e)
-      setTimeout(() => _app.updateLineNumbers(e.target), 10)
-    }
-
     this.ui.compare.onclick = compareHandler
 
     this.ui.edit.onclick = function () {
@@ -86,8 +84,8 @@
       _app.toggleView(VIEW_MODE_EDIT)
     }
 
-    this.ui.save.onclick = function (e) {
-      _app.save()
+    this.ui.download.onclick = function () {
+      _app.download()
     }
 
     this.ui.form.onsubmit = function (e) {
@@ -115,11 +113,7 @@
         context: Infinity,
       }
     )
-    this.state.data = buffer
-      .Buffer(pako.deflate(this.state.diff))
-      .toString('hex')
     this.state.title = this.ui.title.value
-    this.state.created = null
   }
 
   App.prototype.render = function () {
@@ -147,28 +141,10 @@
 
   App.prototype.setDiffInfo = function () {
     const header = $('.d2h-file-header')
-    const title = this.state.title || 'Untitled'
-    let copyButton = false
     let html = `<div class="diff-info">`
 
     if (this.state.title) {
-      html += `<div>Name: <strong>${title}</strong></div>`
-    }
-
-    if (this.state.created) {
-      const date = dateFormat(new Date(Date.parse(this.state.created)))
-      html += `<div>Date: <strong>${date}</strong></div>`
-    }
-
-    if (this.state.id) {
-      const url = this.getUrl()
-      copyButton = true
-      html +=
-        `<div class="url">` +
-        `URL: <a href="${url}">${url}</a>` +
-        `<span class="copy" data-url="${url}"></span>` +
-        `<span class="copy-success fade hidden">Copied</span>` +
-        `</div>`
+      html += `<div>Name: <strong>${escapeHtml(this.state.title)}</strong></div>`
     }
 
     html += `</div>`
@@ -182,31 +158,18 @@
       `</div>`
 
     header.innerHTML = html
-
-    if (copyButton) {
-      $('.diff-info .url .copy').onclick = this.copyUrl
-    }
   }
 
-  App.prototype.getUrl = function () {
-    return this.state.id ? window.location.origin + '/' + this.state.id : null
-  }
-
-  App.prototype.copyUrl = async function (e) {
-    const target = e.currentTarget
-    const url = target.getAttribute('data-url')
-
-    try {
-      await navigator.clipboard.writeText(url)
-    } catch (e) {
-      this.error(e.message)
-      return
-    }
-
-    const success = target.nextSibling
-    success.show()
-    // success.fadeOut()
-    setTimeout(() => success.hide(), 1000)
+  App.prototype.download = function () {
+    const blob = new Blob([this.state.diff], { type: 'text/x-diff' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = patchFilename(this.state.title)
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   App.prototype.restore = function () {
@@ -214,27 +177,22 @@
     this.ui.title.value = this.state.title
     this.ui.fileA.value = fileA
     this.ui.fileB.value = fileB
-    this.state.id = null
-    this.state.data = null
     this.state.diff = null
   }
 
   App.prototype.toggleView = function (mode) {
-    // this.ui.loader.hide()
     if (mode == VIEW_MODE_DIFF) {
       this.ui.diff.show()
       this.ui.form.hide()
       this.ui.compare.hide()
       this.ui.edit.show()
-      if (!this.state.id) {
-        this.ui.save.show()
-      }
+      this.ui.download.show()
     } else if (mode === VIEW_MODE_EDIT) {
       this.ui.diff.hide()
       this.ui.form.show()
       this.ui.compare.show()
       this.ui.edit.hide()
-      this.ui.save.hide()
+      this.ui.download.hide()
       for (const editor of window.editors) {
         editor.updateLineNumbers()
       }
@@ -251,54 +209,12 @@
   }
 
   App.prototype.error = function (msg) {
-    this.modal('ERROR', msg)
-  }
-
-  App.prototype.save = function () {
-    this.ui.save.disabled = true
-    // this.ui.loader.show()
-    const body = {
-      title: this.state.title,
-      data: this.state.data,
-    }
-    fetch('/api/save', {
-      method: 'POST',
-      body: JSON.stringify(body),
-      headers: { 'content-type': 'application/json' },
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        if (!data.id) {
-          throw Error('Save failed')
-        }
-        this.state.id = data.id
-        this.ui.save.hide()
-        window.location.href = '/' + data.id
-      })
-      .catch((err) => {
-        this.error(err)
-      })
-      .finally(() => {
-        this.ui.save.disabled = false
-      })
+    this.modal('ERROR', escapeHtml(String(msg)))
   }
 
   App.prototype.init = function () {
-    MicroModal.init({ debug: true })
-    if (this.state.id && this.state.data) {
-      try {
-        this.state.diff = decode(this.state.data)
-      } catch (e) {
-        console.log(e)
-        this.error('Decode error')
-        this.toggleView(VIEW_MODE_EDIT)
-        return
-      }
-      this.render()
-      this.toggleView(VIEW_MODE_DIFF)
-    } else {
-      this.toggleView(VIEW_MODE_EDIT)
-    }
+    MicroModal.init()
+    this.toggleView(VIEW_MODE_EDIT)
     return this
   }
 
