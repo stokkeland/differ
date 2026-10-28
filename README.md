@@ -26,18 +26,26 @@ Requirements: Apache httpd 2.4 on Linux (tested on Ubuntu). Nothing else is need
 2. Run the check script:
 
    ```sh
-   sudo bash /var/www/html/differ/check.sh
+   sudo bash /var/www/html/differ/tools/check.sh
    ```
 
    It checks that Apache is installed and running, the required modules are enabled, all files are present and readable by `www-data`, and the `.htaccess` rules are working. If something is wrong, it prints the command or config line that fixes it. It never changes anything itself.
+
+   By default the HTTP checks use `http://localhost/<path>/`, where the path comes from the folder's location under the DocumentRoot. If your site is served by a name-based VirtualHost, `localhost` may reach a different site and every check returns 404. In that case, pass the address you use in the browser:
+
+   ```sh
+   sudo bash tools/check.sh --host diff.example.com
+   sudo bash tools/check.sh --url https://diff.example.com/differ/
+   sudo bash tools/check.sh --url https://localhost/differ/ --insecure   # self-signed certificate
+   ```
 
 3. Open `http://<your-server>/differ/`.
 
 ### Allowing `.htaccess`
 
-The included [`.htaccess`](.htaccess) turns off directory listings and blocks web access to everything the browser doesn't need: dot-files and folders such as `.git` and `.vscode`, the `content/` folder (README images), and `README.md`, `LICENSE` and `check.sh`. Only `index.html` and `client/` are served.
+The included [`.htaccess`](.htaccess) turns off directory listings and blocks web access to everything the browser doesn't need: dot-files and folders such as `.git` and `.vscode`, the `content/` folder (README images), the `tools/` folder (deployment scripts), and `README.md` and `LICENSE`. Only `index.html` and `client/` are served.
 
-On Ubuntu, Apache ignores `.htaccess` files by default. If `check.sh` reports that the rules aren't applied, add this to your site config, for example `/etc/apache2/sites-available/000-default.conf`, and reload Apache:
+On Ubuntu, Apache ignores `.htaccess` files by default. If `tools/check.sh` reports that the rules aren't applied, add this to your site config, for example `/etc/apache2/sites-available/000-default.conf`, and reload Apache:
 
 ```apache
 <Directory /var/www/html/differ>
@@ -74,7 +82,7 @@ client/css/         styles (vendor/ holds third-party CSS)
 client/js/          app code (vendor/ holds third-party JS)
 client/img/         favicon
 .htaccess           Apache rules: directory index, access blocking
-check.sh            deployment check
+tools/check.sh      deployment check (not served)
 content/            README images (not served)
 ```
 

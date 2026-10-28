@@ -3,12 +3,34 @@
 # DIƒƒER deployment check for Apache httpd on Ubuntu/Debian.
 # Read-only: reports problems, changes nothing.
 #
-# Usage: bash check.sh        (run with sudo for the most complete check)
+# Usage: bash tools/check.sh [options]   (run with sudo for the most complete check)
+#
+#   --url URL     base URL of the app, e.g. https://diff.example.com/differ/
+#   --host NAME   hostname to test against, keeping the path detected from
+#                 the DocumentRoot (default: localhost)
+#   --insecure    don't verify TLS certificates (self-signed https)
+#   -h, --help    show this help
 #
 
-APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WEB_USER="${WEB_USER:-www-data}"
 HOST="${HOST:-localhost}"
+BASE_URL="${BASE_URL:-}"
+CURL_OPTS=()
+
+usage() { sed -n '2,/^$/s/^# \{0,1\}//p' "${BASH_SOURCE[0]}"; }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --url)      BASE_URL="$2"; shift 2 ;;
+    --url=*)    BASE_URL="${1#*=}"; shift ;;
+    --host)     HOST="$2"; shift 2 ;;
+    --host=*)   HOST="${1#*=}"; shift ;;
+    --insecure) CURL_OPTS+=(-k); shift ;;
+    -h|--help)  usage; exit 0 ;;
+    *)          echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
 
 FAILS=0
 WARNS=0
@@ -118,56 +140,85 @@ echo
 # --- HTTP -----------------------------------------------------------------
 echo "HTTP"
 
-DOCROOT=""
-if [ -n "$APACHECTL" ]; then
-  DOCROOT="$("$APACHECTL" -S 2>/dev/null | sed -n 's/^Main DocumentRoot: "\(.*\)"/\1/p')"
-fi
-DOCROOT="${DOCROOT:-/var/www/html}"
-DOCROOT="$(cd "$DOCROOT" 2>/dev/null && pwd || echo "$DOCROOT")"
+if [ -z "$BASE_URL" ]; then
+  DOCROOT=""
+  if [ -n "$APACHECTL" ]; then
+    DOCROOT="$("$APACHECTL" -S 2>/dev/null | sed -n 's/^Main DocumentRoot: "\(.*\)"/\1/p')"
+  fi
+  DOCROOT="${DOCROOT:-/var/www/html}"
+  DOCROOT="$(cd "$DOCROOT" 2>/dev/null && pwd || echo "$DOCROOT")"
 
-case "$APP_DIR/" in
-  "$DOCROOT"/*) URL_PATH="${APP_DIR#"$DOCROOT"}/" ;;
-  *)            URL_PATH="" ;;
+  case "$APP_DIR/" in
+    "$DOCROOT"/*) BASE_URL="http://$HOST${APP_DIR#"$DOCROOT"}/" ;;
+    *)
+      warn "$APP_DIR is not under the main DocumentRoot ($DOCROOT)"
+      info "if it is served by a VirtualHost or Alias, pass its URL:"
+      info "  bash tools/check.sh --url http://your.site/path/"
+      info "otherwise copy the folder there, e.g. sudo cp -r '$APP_DIR' $DOCROOT/differ"
+      ;;
+  esac
+fi
+case "$BASE_URL" in
+  ""|*/) ;;
+  *)     BASE_URL="$BASE_URL/" ;;
 esac
 
-if [ -z "$URL_PATH" ]; then
-  warn "$APP_DIR is not under the DocumentRoot ($DOCROOT)"
-  info "copy the folder there, e.g. sudo cp -r '$APP_DIR' $DOCROOT/differ"
-  info "or set up an Alias/VirtualHost for it, then re-run this check"
+if [ -z "$BASE_URL" ]; then
+  :
 elif ! command -v curl >/dev/null 2>&1; then
   warn "curl not installed, skipping HTTP checks (sudo apt install curl)"
 else
-  BASE="http://$HOST$URL_PATH"
-  status() { curl -s -o /dev/null -w '%{http_code}' "$BASE$1"; }
+  info "base URL: $BASE_URL"
+  status() {
+    curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${CURL_OPTS[@]}" "$BASE_URL$1"
+  }
 
+  PAGE_OK=1
   for p in "" "client/js/main.js" "client/css/main.css"; do
     code="$(status "$p")"
-    if [ "$code" = "200" ]; then
-      ok "GET /${URL_PATH#/}$p -> $code"
-    else
-      fail "GET /${URL_PATH#/}$p -> $code (expected 200)"
-    fi
-  done
-
-  HTACCESS_OK=1
-  for p in "README.md" ".htaccess" ".git/HEAD" "content/logo.png" "client/"; do
-    [ -e "$APP_DIR/$p" ] || continue
-    code="$(status "$p")"
     case "$code" in
-      403|404) ok "GET /${URL_PATH#/}$p -> $code (blocked)" ;;
-      *)       fail "GET /${URL_PATH#/}$p -> $code (should be blocked)"; HTACCESS_OK=0 ;;
+      200) ok "$code $BASE_URL$p" ;;
+      000) fail "no response from $BASE_URL$p (connection or TLS error)"; PAGE_OK=0 ;;
+      *)   fail "$code $BASE_URL$p (expected 200)"; PAGE_OK=0 ;;
     esac
   done
 
-  if [ "$HTACCESS_OK" -eq 0 ]; then
-    info ".htaccess is not being applied. Add this to your Apache config"
-    info "(e.g. /etc/apache2/sites-available/000-default.conf) and reload:"
-    info ""
-    info "  <Directory $APP_DIR>"
-    info "      AllowOverride All"
-    info "  </Directory>"
-    info ""
-    info "sudo systemctl reload apache2"
+  if [ "$PAGE_OK" -eq 0 ]; then
+    info "the app did not load from this URL, so the access-blocking checks were skipped."
+    info "if the app works in your browser, '$HOST' is probably answered by a"
+    info "different VirtualHost. Re-run with the address you use in the browser:"
+    info "  bash tools/check.sh --host your.site"
+    info "  bash tools/check.sh --url https://your.site/differ/ [--insecure]"
+    if [ -n "$APACHECTL" ]; then
+      VHOSTS="$("$APACHECTL" -S 2>/dev/null | grep -E 'namevhost|default server|^\*:|^[0-9]' )"
+      if [ -n "$VHOSTS" ]; then
+        info "configured virtual hosts (apache2ctl -S):"
+        echo "$VHOSTS" | while read -r line; do info "  $line"; done
+      fi
+    fi
+  else
+    HTACCESS_OK=1
+    for p in "README.md" ".htaccess" ".git/HEAD" "content/logo.png" "tools/check.sh" "client/"; do
+      [ -e "$APP_DIR/$p" ] || continue
+      code="$(status "$p")"
+      if [ "$code" = "403" ]; then
+        ok "$code $BASE_URL$p (blocked)"
+      else
+        fail "$code $BASE_URL$p (expected 403 blocked)"
+        HTACCESS_OK=0
+      fi
+    done
+
+    if [ "$HTACCESS_OK" -eq 0 ]; then
+      info ".htaccess is not being applied. Add this to your Apache config"
+      info "(e.g. /etc/apache2/sites-available/000-default.conf) and reload:"
+      info ""
+      info "  <Directory $APP_DIR>"
+      info "      AllowOverride All"
+      info "  </Directory>"
+      info ""
+      info "sudo systemctl reload apache2"
+    fi
   fi
 fi
 echo
@@ -177,5 +228,9 @@ if [ "$FAILS" -gt 0 ]; then
   echo "$FAILS problem(s), $WARNS warning(s) found."
   exit 1
 fi
-[ -n "$URL_PATH" ] && echo "All good. Open http://<your-server>$URL_PATH" || echo "No problems found ($WARNS warning(s))."
+if [ -n "$BASE_URL" ]; then
+  echo "All good. Open $BASE_URL"
+else
+  echo "No problems found ($WARNS warning(s))."
+fi
 exit 0
